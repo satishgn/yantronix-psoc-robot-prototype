@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<model version="4.0.0" links="0">
+ <framework name="qpn"/>
+ <package name="AOs" stereotype="0x02">
+  <class name="RemoteControl" superclass="qpn::QActive">
+   <attribute name="J1_VRx_Mid" type="volatile int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="J1_VRy_Mid" type="volatile int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="J1_VRx_Max" type="volatile int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="J1_VRy_Max" type="volatile int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="J1_VRx_Out" type="volatile int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="J1_VRy_Out" type="volatile int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="switchState" type="volatile uint8_t" visibility="0x02" properties="0x00"/>
+   <attribute name="PWM_Compare" type="uint16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="txData[TX_DATA_SIZE]" type="char_t" visibility="0x02" properties="0x00"/>
+   <statechart>
+    <initial target="../1">
+     <initial_glyph conn="31,4,5,1,67,6,-4">
+      <action box="0,-3,8,3"/>
+     </initial_glyph>
+    </initial>
+    <state name="operational">
+     <exit>QActive_disarmX(&amp;me-&gt;super, 0U);</exit>
+     <initial target="../8">
+      <initial_glyph conn="88,18,5,0,-10,4">
+       <action box="0,-2,10,2"/>
+      </initial_glyph>
+     </initial>
+     <tran trig="SW_CHANGE" target="../6">
+      <tran_glyph conn="30,18,3,0,16,4">
+       <action box="0,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="ADC_SAMPLE" target="../10">
+      <tran_glyph conn="30,42,3,0,16,6">
+       <action box="0,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="LED_FLASH" target="../9">
+      <tran_glyph conn="94,42,1,0,-14,6">
+       <action box="-10,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="CAN_RECEIVE" target="../7">
+      <tran_glyph conn="94,68,1,0,-16,6">
+       <action box="-12,-2,12,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="Q_TIMEOUT" target="../10">
+      <action>//QACTIVE_POST(&amp;AO_RemoteControl, ADC_SAMPLE_SIG, 0U);</action>
+      <tran_glyph conn="30,68,3,2,16,-6">
+       <action box="0,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <state name="swChanged">
+      <entry>/* Store the current switch state */
+me-&gt;switchState = (uint8_t)Q_PAR(me);
+
+/* Send CAN message with switch state */
+BSP_sendCANMsgJ1SWData(me-&gt;switchState);
+
+if (me-&gt;switchState == SWITCH_PRESSED)
+{
+    BSP_printString(&quot;switch pressed.\r\n&quot;);
+}
+
+</entry>
+      <state_glyph node="36,22,20,14">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
+     </state>
+     <state name="canMsgReceived">
+      <entry>me-&gt;PWM_Compare = (uint16_t)Q_PAR(me);
+BSP_setLedPWM(me-&gt;PWM_Compare);
+
+sprintf(me-&gt;txData, &quot;PWM pulse width: %hu \r\n&quot;, me-&gt;PWM_Compare);
+BSP_printString(me-&gt;txData);</entry>
+      <state_glyph node="68,74,20,14">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
+     </state>
+     <state name="initWaiting">
+      <entry>QActive_armX((QActive *)me, 0U, INIT_WAIT_TOUT, 0U);</entry>
+      <exit>me-&gt;J1_VRx_Mid = BSP_getADCResult(ADC_CHANNEL_NUMBER_0);
+me-&gt;J1_VRy_Mid = BSP_getADCResult(ADC_CHANNEL_NUMBER_1);
+
+me-&gt;J1_VRx_Max = me-&gt;J1_VRy_Max = 4095;
+
+QActive_armX((QActive *)me, 0U, ADC_SAMPLE_TOUT, ADC_SAMPLE_TOUT);</exit>
+      <tran trig="Q_TIMEOUT" target="../../9">
+       <tran_glyph conn="68,30,3,0,8,18">
+        <action box="0,-2,10,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="68,22,20,14">
+       <entry box="1,2,6,2"/>
+       <exit box="1,4,6,2"/>
+      </state_glyph>
+     </state>
+     <state name="ledFlashing">
+      <entry>BSP_ledFlash();
+QACTIVE_POST(&amp;AO_RemoteControl, ADC_SAMPLE_SIG, 0U);</entry>
+      <state_glyph node="68,48,20,14">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
+     </state>
+     <state name="adcSampling">
+      <entry>if (BSP_isADCEOC()) {
+    /* Gets ADC conversion result */
+    me-&gt;J1_VRx_Out = BSP_getADCResult(ADC_CHANNEL_NUMBER_0);
+    me-&gt;J1_VRy_Out = BSP_getADCResult(ADC_CHANNEL_NUMBER_1);
+
+    /* Saturates ADC result to positive numbers */
+    if (me-&gt;J1_VRx_Out &lt; 0)
+    {
+        me-&gt;J1_VRx_Out = 0;
+    }
+
+    if (me-&gt;J1_VRy_Out &lt; 0)
+    {
+        me-&gt;J1_VRy_Out = 0;
+    }
+
+    /* Sends value of ADC output via CAN */
+    BSP_sendCANMsgJ1VRxData(me-&gt;J1_VRx_Mid, me-&gt;J1_VRx_Max, me-&gt;J1_VRx_Out);
+    BSP_sendCANMsgJ1VRyData(me-&gt;J1_VRy_Mid, me-&gt;J1_VRy_Max, me-&gt;J1_VRy_Out);
+
+    sprintf(me-&gt;txData, &quot;VRx: %u, VRy: %u \r\n&quot;, me-&gt;J1_VRx_Out, me-&gt;J1_VRy_Out);
+    BSP_printString(me-&gt;txData);
+}</entry>
+      <tran trig="Q_TIMEOUT" target="../../9">
+       <action>//QACTIVE_POST(&amp;AO_RemoteControl, LED_FLASH_SIG, 0U);</action>
+       <tran_glyph conn="36,56,3,3,32">
+        <action box="0,-2,10,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="36,48,20,14">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
+     </state>
+     <state_glyph node="30,8,64,84">
+      <exit box="1,2,6,2"/>
+     </state_glyph>
+    </state>
+    <state_diagram size="122,97"/>
+   </statechart>
+  </class>
+  <attribute name="AO_RemoteControl" type="struct RemoteControl" visibility="0x00" properties="0x00"/>
+  <operation name="RemoteControl_ctor" type="void" visibility="0x00" properties="0x00">
+   <code>RemoteControl *me = &amp;AO_RemoteControl;
+QActive_ctor(&amp;me-&gt;super, Q_STATE_CAST(&amp;RemoteControl_initial));
+me-&gt;J1_VRx_Mid = me-&gt;J1_VRx_Max = me-&gt;J1_VRx_Out = 0;
+me-&gt;J1_VRy_Mid = me-&gt;J1_VRy_Max = me-&gt;J1_VRy_Out = 0;
+me-&gt;switchState = SWITCH_RELEASED; 
+me-&gt;PWM_Compare = 0;</code>
+  </operation>
+ </package>
+ <directory name=".">
+  <file name="remotecontrol.h">
+   <text>/*****************************************************************************
+* Company : Yantronix
+* Author  : Satish Nair
+* Mailto  : satishgn77@gmail.com
+*****************************************************************************/
+
+#ifndef remotecontrol_h
+#define remotecontrol_h
+
+enum RemoteControlSignals {
+    RESERVE_SIG = Q_USER_SIG,
+    LED_FLASH_SIG,
+    SW_CHANGE_SIG,
+    ADC_SAMPLE_SIG,
+    CAN_RECEIVE_SIG,
+    TERMINATE_SIG,
+    MAX_SIG
+};
+
+$declare(AOs::AO_RemoteControl)
+$declare(AOs::RemoteControl_ctor)
+
+#endif /* remotecontrol_h */</text>
+  </file>
+  <file name="remotecontrol.c">
+   <text>/*****************************************************************************
+* Company : Yantronix
+* Author  : Satish Nair
+* Mailto  : satishgn77@gmail.com
+*****************************************************************************/
+
+#include &quot;qpn.h&quot;
+#include &quot;bsp.h&quot;
+#include &quot;remotecontrol.h&quot;
+#include &lt;stdio.h&gt;
+
+Q_DEFINE_THIS_MODULE(&quot;remotecontrol&quot;)
+
+#define INIT_WAIT_TOUT         (QTimeEvtCtr)(BSP_TICKS_PER_SEC / 10U)
+#define ADC_SAMPLE_TOUT        (QTimeEvtCtr)(BSP_TICKS_PER_SEC / 10U)
+
+$declare(AOs::RemoteControl)
+
+$define(AOs::AO_RemoteControl)
+$define(AOs::RemoteControl_ctor)
+$define(AOs::RemoteControl)
+</text>
+  </file>
+ </directory>
+</model>
