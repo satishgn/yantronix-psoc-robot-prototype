@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<model version="4.0.0" links="0">
+ <framework name="qpn"/>
+ <package name="AOs" stereotype="0x02">
+  <class name="MotorControl" superclass="qpn::QActive">
+   <attribute name="J1_VRx_Out" type="int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="J1_VRy_Out" type="int16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="motorPWMCompare" type="uint16_t" visibility="0x02" properties="0x00"/>
+   <attribute name="motorDirection" type="uint8_t" visibility="0x02" properties="0x00"/>
+   <attribute name="switchState" type="uint8_t" visibility="0x02" properties="0x00"/>
+   <attribute name="txData[TX_DATA_SIZE]" type="char_t" visibility="0x02" properties="0x00"/>
+   <statechart>
+    <initial target="../1">
+     <initial_glyph conn="31,4,5,1,67,6,-4">
+      <action box="0,-3,8,3"/>
+     </initial_glyph>
+    </initial>
+    <state name="operational">
+     <entry>//QActive_armX((QActive *)me, 0U, APP_100MS_TIMEOUT, APP_100MS_TIMEOUT);</entry>
+     <exit>//QActive_disarmX(&amp;me-&gt;super, 0U);</exit>
+     <initial target="../9">
+      <initial_glyph conn="88,18,5,0,-10,6">
+       <action box="-4,-2,10,2"/>
+      </initial_glyph>
+     </initial>
+     <tran trig="SW_CHANGE" target="../8">
+      <tran_glyph conn="30,18,3,0,16,6">
+       <action box="0,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="LED_FLASH" target="../9">
+      <tran_glyph conn="94,44,1,2,-16,-6">
+       <action box="-10,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="CAN_J1VRX">
+      <action>me-&gt;J1_VRx_Out = (int16_t)Q_PAR(me);</action>
+      <tran_glyph conn="30,44,3,-1,16">
+       <action box="0,-2,15,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="CAN_J1VRY">
+      <action>me-&gt;J1_VRy_Out = (int16_t)Q_PAR(me);
+sprintf(me-&gt;txData, &quot;VRy: %u \r\n&quot;, me-&gt;J1_VRy_Out);
+BSP_printString(me-&gt;txData);</action>
+      <tran_glyph conn="30,50,3,-1,16">
+       <action box="0,-2,14,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="MOTOR_PWM">
+      <action>me-&gt;motorDirection = (uint8_t)Q_PAR(me);
+me-&gt;motorPWMCompare = (uint16_t)(Q_PAR(me) &gt;&gt; 16);
+
+BSP_setMotorSpeedDirection(me-&gt;motorDirection, me-&gt;motorPWMCompare);
+
+sprintf(me-&gt;txData, &quot;VRx: %u =&gt; %hu \r\n&quot;, me-&gt;J1_VRx_Out, me-&gt;motorPWMCompare);
+BSP_printString(me-&gt;txData);</action>
+      <tran_glyph conn="30,56,3,-1,16">
+       <action box="0,-2,15,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="LED_PULSE">
+      <action>BSP_setLedPWM(me-&gt;motorPWMCompare);
+BSP_sendCANMsgLED1Data(me-&gt;motorPWMCompare);</action>
+      <tran_glyph conn="94,56,1,-1,-16">
+       <action box="-11,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="Q_TIMEOUT">
+      <action>/* Do nothing for now */</action>
+      <tran_glyph conn="94,50,1,-1,-16">
+       <action box="-10,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <state name="swChanged">
+      <entry>/* Store the current switch state */
+me-&gt;switchState = (uint8_t)Q_PAR(me);
+
+if (me-&gt;switchState == SWITCH_PRESSED)
+{
+    BSP_printString(&quot;switch pressed.\r\n&quot;);
+}</entry>
+      <state_glyph node="36,24,20,14">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
+     </state>
+     <state name="ledFlashing">
+      <entry>BSP_ledFlash();</entry>
+      <state_glyph node="68,24,20,14">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
+     </state>
+     <state_glyph node="30,8,64,54">
+      <entry box="1,2,6,2"/>
+      <exit box="1,4,6,2"/>
+     </state_glyph>
+    </state>
+    <state_diagram size="122,70"/>
+   </statechart>
+  </class>
+  <attribute name="AO_MotorControl" type="struct MotorControl" visibility="0x00" properties="0x00"/>
+  <operation name="MotorControl_ctor" type="void" visibility="0x00" properties="0x00">
+   <code>MotorControl *me = &amp;AO_MotorControl;
+QActive_ctor(&amp;me-&gt;super, Q_STATE_CAST(&amp;MotorControl_initial));
+me-&gt;J1_VRx_Out = 0;
+me-&gt;J1_VRy_Out = 0;
+me-&gt;motorPWMCompare = 0;
+me-&gt;motorDirection = MOTOR_DIR_CW;
+me-&gt;switchState = SWITCH_RELEASED;</code>
+  </operation>
+ </package>
+ <directory name=".">
+  <file name="motorcontrol.h">
+   <text>/*****************************************************************************
+* Company : Yantronix
+* Author  : Satish Nair
+* Mailto  : satishgn77@gmail.com
+*****************************************************************************/
+
+#ifndef motorcontrol_h
+#define motorcontrol_h
+
+enum MotorControlSignals {
+    RESERVE_SIG = Q_USER_SIG,
+    LED_FLASH_SIG,
+    LED_PULSE_SIG,
+    SW_CHANGE_SIG,
+    MOTOR_PWM_SIG,
+    CAN_J1VRX_SIG,
+    CAN_J1VRY_SIG,
+    TERMINATE_SIG,
+    MAX_SIG
+};
+
+$declare(AOs::AO_MotorControl)
+$declare(AOs::MotorControl_ctor)
+
+#endif /* motorcontrol_h */</text>
+  </file>
+  <file name="motorcontrol.c">
+   <text>/*****************************************************************************
+* Company : Yantronix
+* Author  : Satish Nair
+* Mailto  : satishgn77@gmail.com
+*****************************************************************************/
+
+#include &quot;qpn.h&quot;
+#include &quot;bsp.h&quot;
+#include &quot;motorcontrol.h&quot;
+#include &lt;stdio.h&gt;
+
+Q_DEFINE_THIS_MODULE(&quot;motorcontrol&quot;)
+
+#define APP_100MS_TIMEOUT        (QTimeEvtCtr)(BSP_TICKS_PER_SEC / 10U)
+
+$declare(AOs::MotorControl)
+
+$define(AOs::AO_MotorControl)
+$define(AOs::MotorControl_ctor)
+$define(AOs::MotorControl)
+</text>
+  </file>
+ </directory>
+</model>
