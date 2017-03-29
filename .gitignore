@@ -21,13 +21,23 @@
 *.dylib
 
 # Executables
-*.exe
+#*.exe
 *.out
 *.app
 *.i*86
 *.x86_64
 *.hex
+*.bin
 
 # Debug files
 *.dSYM/
 *.su
+
+# Misc. files and directories
+*.lst
+*.map
+codegentemp/
+CortexM0/
+CortexM3/
+Export/
+
